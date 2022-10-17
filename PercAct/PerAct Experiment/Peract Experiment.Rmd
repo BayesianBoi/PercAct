@@ -1,0 +1,68 @@
+---
+title: "Perception and action experiment"
+author: "Niels"
+date: '2022-10-14'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+pacman::p_load(tidyverse, mousetrap, readbulk)
+df <- read_opensesame(directory = ".", extension = ".csv")
+df <- subset(df, subset = !df$response_time > "5500")
+```
+
+```{r}
+#Mousetrap (Below runs multiple functions at once)
+if (TRUE){
+  #Converting only the correct raw mouse tracking data into mousetrap data
+  mt <- mt_import_mousetrap(subset(df, df$correct == 1))
+  #excluding the initation times for the trials
+  mt <- mt_exclude_initiation(mt)
+  #mirror-symmetric mapping of movements
+  mt <- mt_remap_symmetric(mt, use = "trajectories", remap_xpos = "left")
+  #Aligning the starting and end position of all the trials (Might need to change this one -
+   #it space-normalizes the data.)
+  mt <- mt_align_start_end(mt)
+}
+
+#standardizing the time variable for the trials into chunks in order for the data to be comparable between trials
+mt <- mt_time_normalize(mt)
+#calculating new coloun for the metrics (MAD, AD) used below
+mt <- mt_measures(mt)
+
+#the metrics are as follows:
+  #* MAD describes the maximum absolute deviation from the direct path connecting the start        and end point of the trajectory (if going in a straight line). Meaning that a value of 0      would be ideal.
+  #* AD denotes the average deviation from the the direct path.
+  #* AUC denotes the area under the curve; meaning the geometric area between the actual           trajectory and the direct path where the area below the the direct path has been              subtracted
+  #* xpos_flips denotes the average number of directional changes along the x-axis
+  #* RT denotes the average response time for the trials
+
+#The MAD for the child and dall-e conditions is respectively 158 (AD = 36) and 122 (AD = 29).
+mt_aggregate(
+  mt, use = "measures",
+  use_variables = c("MAD", "AD", "AUC", "xpos_flips", "RT"),
+  use2_variables = "Stimulus",
+  subject_id = "subject_nr"
+)
+
+#plotting all trial curves with colors based on the condition
+mt_plot(
+  mt, use = "tn_trajectories",
+  x = "xpos", y = "ypos", color = "Stimulus") +
+  theme_minimal() + labs(title = "Aligned time-normalized mouse-tracking data", 
+                           x = "Position (x)",
+                           y = "Position (y)")
+  #plotting the aggregated curves for the two conditions
+mt_plot_aggregate(
+  mt, use = "tn_trajectories",
+  x = "xpos", y = "ypos", color = "Stimulus",
+  subject_id = "subject_nr") +
+  theme_minimal() + labs(title = "Aligned aggregated time-normalized mouse trajectories", 
+                           x = "Position (x)",
+                           y = "Position (y)")
+```
+  
