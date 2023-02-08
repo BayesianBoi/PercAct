@@ -1,0 +1,151 @@
+---
+title: "Eye tracking Workshop CogSci Fall 2022"
+subtitle: "Data cleaning exercise"
+author: "Study Group 1"
+date: "6/12/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, reader)
+```
+
+Load the data for all the participants *in your study group* who did the **FORAGING (searching v counting) experiment**. 
+
+The files that we exported from EyeLink Data Viewer have been sold to us as Excel files, but they are really tab-delimited files disguised as .xls files (rascals...), so trying to open them with something like readxl::read_excel won't work. Instead, use reader::read_delim and specify (delim = "\t").
+
+Row-bind data sets across participants, so that you end up with three separate data sets — Samples, Fixations, and Saccades — including all participants in your study group.
+
+```{r}
+Samples <- read_delim("elisius1_samples.xls", delim = "\t")
+Fixations <- read_delim("elisius1_fixations.xls", delim = "\t")
+Saccades <- read_delim("elisius1_saccades.xls", delim = "\t")
+```
+
+Use the participant ID to derive information about the order of the two conditions in the experiment. Make a column (call it Order) that contains either the number 1 (search first, count last) or 2 (count first, search last).
+
+```{r}
+Samples$Order <- 1
+Fixations$Order <- 1
+Saccades$Order <- 1
+```
+
+Make a new column called "Task" and add information to this column on whether each trial is "Searching" or "Counting". You can easily calculate this by using the trial number and the Order variable we just made.
+
+```{r}
+Samples$Task <- ifelse(Samples$TRIAL_INDEX <= 5 & Samples$Order == 1, "Searching", "Counting")
+Fixations$Task <- ifelse(Fixations$TRIAL_INDEX <= 5 & Fixations$Order == 1, "Searching", "Counting")
+Saccades$Task <- ifelse(Saccades$TRIAL_INDEX <= 5 & Saccades$Order == 1, "Searching", "Counting")
+```
+
+Keep only the variables we need and drop the rest! I have picked the labels — you make sure to find the columns that match the labels.
+
+```{r}
+Samples <- Samples %>% 
+  select(
+    ParticipantID= RECORDING_SESSION_LABEL,
+    Trial= TRIAL_INDEX,
+    Time= TIMESTAMP,
+    LeftGazeX= LEFT_GAZE_X,
+    LeftGazeY= LEFT_ACCELERATION_Y,
+    RightGazeX= RIGHT_GAZE_X,
+    RightGazeY= RIGHT_GAZE_Y,
+    LeftPupilSize= LEFT_PUPIL_SIZE,
+    RightPupilSize= RIGHT_PUPIL_SIZE,
+    Order,
+    Task
+    ) 
+
+Fixations <- Fixations %>% 
+  select(
+    ParticipantID= RECORDING_SESSION_LABEL,
+    Trial= TRIAL_INDEX,
+    FixationNo= CURRENT_FIX_INDEX,
+    StartTime= CURRENT_FIX_START,
+    EndTime= CURRENT_FIX_END,
+    Duration= CURRENT_FIX_DURATION,
+    PositionX= CURRENT_FIX_X,
+    PositionY= CURRENT_FIX_Y,
+    PupilSize= CURRENT_FIX_PUPIL,
+    EyeUsed= EYE_USED,
+    Order,
+    Task
+    ) 
+
+Saccades <- Saccades %>%
+  select(
+    ParticipantID= RECORDING_SESSION_LABEL,
+    Trial= TRIAL_INDEX,
+    SaccadeNo= CURRENT_SAC_INDEX,
+    StartTime= CURRENT_SAC_START_TIME,
+    EndTime= CURRENT_SAC_END_TIME,
+    Duration= CURRENT_SAC_DURATION,
+    StartX= CURRENT_SAC_START_X,
+    StartY= CURRENT_SAC_START_Y,
+    EndX= CURRENT_SAC_END_X,
+    EndY= CURRENT_SAC_END_Y,
+    PeakVelocity= CURRENT_SAC_PEAK_VELOCITY,
+    MeanVelocity= CURRENT_SAC_AVG_VELOCITY,
+    Blink= CURRENT_SAC_CONTAINS_BLINK,
+    Direction= CURRENT_SAC_DIRECTION,
+    Amplitude= CURRENT_SAC_AMPLITUDE,
+    EyeUsed= EYE_USED,
+    Order,
+    Task
+    )
+```
+
+Note that Fixations has two variable for coordinates (PositionX and PositionY) but Samples has four (x/y for the left eye and x/y for the right eye). We like the first option better, given that two of the four columns will always be empty by definition. Thus, in Samples, make two columns (PositionX and PositionY) by collapsing the four original columns; then add a column called "EyeUsed" that says either "Left" or "Right".
+
+```{r}
+Samples <- Samples %>% 
+  mutate(
+    EyeUsed = ifelse('.' %in% LeftGazeX, "Right", "Left"),
+    PositionX = paste0(RightGazeX, LeftGazeX),
+    PositionY = paste0(RightGazeY, LeftGazeY),
+    PositionX = gsub("\\.", "", PositionX),
+    PositionY = gsub("\\.", "", PositionY)
+  ) %>% 
+  dplyr::select(-c(RightGazeX, RightGazeY, LeftGazeX, LeftGazeY))
+
+```
+
+It may happen that when you open the file, some variables have two extra zeros and have been transformed into a character variable (rascals...). Check these variables and fix the problem, if you have it.
+
+Gaze X: values should be between 0 and 1680
+Gaze Y: values should be between 0 and 1050
+Pupil Size: values should be 4 digits (no more than 9999)
+
+These values could also have extra zeros: Time, StartX, StartY, MeanVelocity, PeakVelocity. Fix in case!
+
+```{r}
+# IN DOUBT ABOUT THE WHOLE SECTION. It is in general very speculative as we do not know on what scale the values are supposed to be
+Fixations <- Fixations %>% 
+  mutate(
+    PositionX = PositionX/100,
+    PositionY = PositionY/100,
+    PupilSize = PupilSize/100)
+
+# Unsure about the one below? Which scale is time on? However, the unmodified value seems extreme
+Samples$Time <- Samples$Time/10000
+
+Saccades <- Saccades %>% 
+  mutate(
+    StartX = StartX/100,
+    StartY = StartY/100,
+    EndX = EndX/100,
+    EndY = EndY/100,
+    PeakVelocity = PeakVelocity/100,
+    MeanVelocity = MeanVelocity/100
+  )
+```
+
+Save as .csv file, add your study group number to the name, and upload to the folder (link on Brightspace).
+
+```{r}
+write_csv(Samples, "Samples_STUDYGROUP_X.csv")
+write_csv(Fixations, "Fixations_STUDYGROUP_X.csv")
+write_csv(Saccades, "Saccades_STUDYGROUP_X.csv")
+```
